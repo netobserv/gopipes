@@ -1,5 +1,10 @@
 # CHANGELOG
 
+# v0.2.0
+
+* Inter-node communication input channels are now unbuffered by default. To make them buffered,
+  you can append the `node.ChannelBufferLen` function to the `AsMiddle` and `AsTerminal` functions.
+
 # v0.1.1
 
 * Added InType and OutType inspection functions to the Nodes
