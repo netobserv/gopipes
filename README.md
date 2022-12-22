@@ -5,13 +5,15 @@ API doc: https://pkg.go.dev/github.com/netobserv/gopipes
 Go-pipes is a library that allows to dynamically connect multiple pipeline
 stages that are communicated via channels. Each stage will run in a goroutine.
 
+This library is a selective fork of a community project: http://github.com/mariomac/pipes
+
 This library allows wrapping functions within Nodes of a graph. In order to pass data across
 the nodes, each wrapped function must receive, as arguments, an input channel, an output channel,
 or both.
 
 There are three types of nodes:
 
-* **Init** node: each of the starting point of a graph. This is, all the nodes that bring information
+* **Start** node: each of the starting point of a graph. This is, all the nodes that bring information
   from outside the graph: e.g. because they generate them or because they acquire them from an
   external source like a Web Service. A graph must have at least one Init node. An Init node must 
   have at least one output node.
@@ -32,8 +34,8 @@ Check the complete examples in the [examples/](./examples) folder).
 ```go
 func main() {
 	// Defining init, middle and terminal nodes that wrap some functions
-	start1 := node.AsInit(StartCounter)
-	start2 := node.AsInit(StartRandoms)
+	start1 := node.AsStart(StartCounter)
+	start2 := node.AsStart(StartRandoms)
 	odds := node.AsMiddle(OddFilter)
 	evens := node.AsMiddle(EvenFilter)
 	oddsMsg := node.AsMiddle(Messager("odd number"))
