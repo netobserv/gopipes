@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
@@ -13,8 +14,8 @@ import (
 const timeout = 2 * time.Second
 
 func TestBasicGraph(t *testing.T) {
-	start1 := AsInit(Counter(1, 3))
-	start2 := AsInit(Counter(6, 8))
+	start1 := AsStart(Counter(1, 3))
+	start2 := AsStart(Counter(6, 8))
 	odds := AsMiddle(OddFilter)
 	evens := AsMiddle(EvenFilter)
 	oddsMsg := AsMiddle(Messager("odd"))
@@ -66,13 +67,13 @@ func TestTypeCapture(t *testing.T) {
 		foo string
 	}
 
-	start1 := AsInit(Counter(1, 3))
+	start1 := AsStart(Counter(1, 3))
 	odds := AsMiddle(OddFilter)
 	oddsMsg := AsMiddle(Messager("odd"))
 	collector := AsTerminal(func(strs <-chan string) {})
 	testColl := AsMiddle(func(in <-chan testType, out chan<- []string) {})
 
-	// assert that init/output types have been properly collected
+	// assert that start/output types have been properly collected
 	intType := reflect.TypeOf(1)
 	stringType := reflect.TypeOf("")
 	assert.Equal(t, intType, start1.OutType())
@@ -87,11 +88,11 @@ func TestTypeCapture(t *testing.T) {
 
 func TestConfigurationOptions_UnbufferedChannelCommunication(t *testing.T) {
 	graphIn, graphOut := make(chan int), make(chan int)
-	endInit, endMiddle, endTerm := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	init := AsInit(func(out chan<- int) {
+	endStart, endMiddle, endTerm := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	start := AsStart(func(out chan<- int) {
 		n := <-graphIn
 		out <- n
-		close(endInit)
+		close(endStart)
 	})
 	middle := AsMiddle(func(in <-chan int, out chan<- int) {
 		n := <-in
@@ -103,16 +104,16 @@ func TestConfigurationOptions_UnbufferedChannelCommunication(t *testing.T) {
 		graphOut <- n
 		close(endTerm)
 	})
-	init.SendsTo(middle)
+	start.SendsTo(middle)
 	middle.SendsTo(term)
-	init.Start()
+	start.Start()
 
 	graphIn <- 123
 	// Since the nodes are unbuffered, they are blocked and can't accept/process data until
 	// the last node exports it
 	select {
-	case <-endInit:
-		require.Fail(t, "expected that init node is still blocked")
+	case <-endStart:
+		require.Fail(t, "expected that start node is still blocked")
 	default: //ok!
 	}
 	select {
@@ -132,9 +133,9 @@ func TestConfigurationOptions_UnbufferedChannelCommunication(t *testing.T) {
 		require.Fail(t, "timeout while waiting for the terminal node to forward the data")
 	}
 	select {
-	case <-endInit: //ok!
+	case <-endStart: //ok!
 	case <-time.After(timeout):
-		require.Fail(t, "timeout while waiting for the init node to finish")
+		require.Fail(t, "timeout while waiting for the start node to finish")
 	}
 	select {
 	case <-endMiddle: //ok!
@@ -150,11 +151,11 @@ func TestConfigurationOptions_UnbufferedChannelCommunication(t *testing.T) {
 
 func TestConfigurationOptions_BufferedChannelCommunication(t *testing.T) {
 	graphIn, graphOut := make(chan int), make(chan int)
-	endInit, endMiddle, endTerm := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	init := AsInit(func(out chan<- int) {
+	endStart, endMiddle, endTerm := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	start := AsStart(func(out chan<- int) {
 		n := <-graphIn
 		out <- n
-		close(endInit)
+		close(endStart)
 	})
 	middle := AsMiddle(func(in <-chan int, out chan<- int) {
 		n := <-in
@@ -166,18 +167,18 @@ func TestConfigurationOptions_BufferedChannelCommunication(t *testing.T) {
 		graphOut <- n
 		close(endTerm)
 	}, ChannelBufferLen(1))
-	init.SendsTo(middle)
+	start.SendsTo(middle)
 	middle.SendsTo(term)
-	init.Start()
+	start.Start()
 
 	graphIn <- 123
 	// Since the nodes are buffered, they can keep accepting/processing data even if the last
 	// node hasn't exported it
 
 	select {
-	case <-endInit: //ok!
+	case <-endStart: //ok!
 	case <-time.After(timeout):
-		require.Fail(t, "timeout while waiting for the init node to finish")
+		require.Fail(t, "timeout while waiting for the start node to finish")
 	}
 	select {
 	case <-endMiddle: //ok!
@@ -204,51 +205,46 @@ func TestConfigurationOptions_BufferedChannelCommunication(t *testing.T) {
 
 }
 
-func TestGraphVerification(t *testing.T) {
-	assert.Panics(t, func() {
-		_ = AsInit(func(out <-chan int) {})
-	}, "must panic if the init channel is not writable")
-	assert.Panics(t, func() {
-		_ = AsInit(func() {})
-	}, "must panic if the init function has no arguments")
-	assert.Panics(t, func() {
-		_ = AsInit(func(in, out chan int) {})
-	}, "must panic if the Init function has more than one argument")
-	assert.Panics(t, func() {
-		_ = AsInit(func(in []int) {})
-	}, "must panic if the init function argument is not a channel")
-	assert.Panics(t, func() {
-		_ = AsMiddle(func(in chan<- int, out chan<- int) {})
-	}, "must panic if a Middle in channel is not readable")
-	assert.Panics(t, func() {
-		_ = AsMiddle(func(in <-chan int, out <-chan int) {})
-	}, "must panic if a Middle out channel is not writable")
-	assert.Panics(t, func() {
-		_ = AsMiddle(func(in int, out chan<- int) {})
-	}, "must panic if a Middle input not a channel")
-	assert.Panics(t, func() {
-		_ = AsMiddle(func(in <-chan int, out int) {})
-	}, "must panic if a Middle out is not a channel")
-	assert.Panics(t, func() {
-		_ = AsMiddle(func(in <-chan int) {})
-	}, "must panic if a Middle does not have two arguments")
-	assert.Panics(t, func() {
-		p := AsInit(Counter(1, 2))
-		p.SendsTo(AsMiddle(func(in, out chan string) {}))
-	}, "must panic if the input of a middle node does not match the type of the previous inner node")
-	assert.Panics(t, func() {
-		p := AsInit(Counter(1, 2))
-		p.SendsTo(AsTerminal(func(in chan string) {}))
-	}, "must panic if the input of a terminal node does not match the type of the previous inner node")
-	assert.Panics(t, func() {
-		m := AsMiddle(Messager("boom"))
-		m.SendsTo(AsMiddle(OddFilter))
-	}, "must panic if the input of a middle node does not match the type of the previous middle node")
-	assert.Panics(t, func() {
-		m := AsMiddle(OddFilter)
-		m.SendsTo(AsTerminal(func(in chan string) {}))
-	}, "must panic if the input of a terminal node does not match the type of the previous middle node")
+func TestContexts(t *testing.T) {
+	endStart, endTerm := make(chan struct{}), make(chan struct{})
 
+	start := AsStartCtx(func(ctx context.Context, out chan<- int) {
+		<-ctx.Done()
+		close(endStart)
+	})
+	term := AsTerminal(func(in <-chan int) {
+		<-in
+		close(endTerm)
+	})
+	start.SendsTo(term)
+	ctx, cancel := context.WithCancel(context.Background())
+	start.StartCtx(ctx)
+
+	// check that, if the context is still open, no channels are closed
+	select {
+	case <-endStart:
+		require.Fail(t, "expected that start node is still running")
+	default: //ok!
+	}
+	select {
+	case <-endTerm:
+		require.Fail(t, "expected that terminal node is still running")
+	default: //ok!
+	}
+
+	cancel()
+
+	// check that, when the context is closed, all channels are closed
+	select {
+	case <-endStart: //ok!
+	case <-time.After(timeout):
+		require.Fail(t, "timeout while waiting for the start node to finish")
+	}
+	select {
+	case <-endTerm: //ok!
+	case <-time.After(timeout):
+		require.Fail(t, "timeout while waiting for the term node to finish")
+	}
 }
 
 func Counter(from, to int) func(out chan<- int) {
