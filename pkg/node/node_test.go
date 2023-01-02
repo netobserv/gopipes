@@ -73,7 +73,7 @@ func TestTypeCapture(t *testing.T) {
 	collector := AsTerminal(func(strs <-chan string) {})
 	testColl := AsMiddle(func(in <-chan testType, out chan<- []string) {})
 
-	// assert that init/output types have been properly collected
+	// assert that start/output types have been properly collected
 	intType := reflect.TypeOf(1)
 	stringType := reflect.TypeOf("")
 	assert.Equal(t, intType, start1.OutType())
@@ -89,7 +89,7 @@ func TestTypeCapture(t *testing.T) {
 func TestConfigurationOptions_UnbufferedChannelCommunication(t *testing.T) {
 	graphIn, graphOut := make(chan int), make(chan int)
 	endStart, endMiddle, endTerm := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	init := AsStart(func(out chan<- int) {
+	start := AsStart(func(out chan<- int) {
 		n := <-graphIn
 		out <- n
 		close(endStart)
@@ -104,16 +104,16 @@ func TestConfigurationOptions_UnbufferedChannelCommunication(t *testing.T) {
 		graphOut <- n
 		close(endTerm)
 	})
-	init.SendsTo(middle)
+	start.SendsTo(middle)
 	middle.SendsTo(term)
-	init.Start()
+	start.Start()
 
 	graphIn <- 123
 	// Since the nodes are unbuffered, they are blocked and can't accept/process data until
 	// the last node exports it
 	select {
 	case <-endStart:
-		require.Fail(t, "expected that init node is still blocked")
+		require.Fail(t, "expected that start node is still blocked")
 	default: //ok!
 	}
 	select {
@@ -135,7 +135,7 @@ func TestConfigurationOptions_UnbufferedChannelCommunication(t *testing.T) {
 	select {
 	case <-endStart: //ok!
 	case <-time.After(timeout):
-		require.Fail(t, "timeout while waiting for the init node to finish")
+		require.Fail(t, "timeout while waiting for the start node to finish")
 	}
 	select {
 	case <-endMiddle: //ok!
@@ -152,7 +152,7 @@ func TestConfigurationOptions_UnbufferedChannelCommunication(t *testing.T) {
 func TestConfigurationOptions_BufferedChannelCommunication(t *testing.T) {
 	graphIn, graphOut := make(chan int), make(chan int)
 	endStart, endMiddle, endTerm := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	init := AsStart(func(out chan<- int) {
+	start := AsStart(func(out chan<- int) {
 		n := <-graphIn
 		out <- n
 		close(endStart)
@@ -167,9 +167,9 @@ func TestConfigurationOptions_BufferedChannelCommunication(t *testing.T) {
 		graphOut <- n
 		close(endTerm)
 	}, ChannelBufferLen(1))
-	init.SendsTo(middle)
+	start.SendsTo(middle)
 	middle.SendsTo(term)
-	init.Start()
+	start.Start()
 
 	graphIn <- 123
 	// Since the nodes are buffered, they can keep accepting/processing data even if the last
@@ -178,7 +178,7 @@ func TestConfigurationOptions_BufferedChannelCommunication(t *testing.T) {
 	select {
 	case <-endStart: //ok!
 	case <-time.After(timeout):
-		require.Fail(t, "timeout while waiting for the init node to finish")
+		require.Fail(t, "timeout while waiting for the start node to finish")
 	}
 	select {
 	case <-endMiddle: //ok!
@@ -208,7 +208,7 @@ func TestConfigurationOptions_BufferedChannelCommunication(t *testing.T) {
 func TestContexts(t *testing.T) {
 	endStart, endTerm := make(chan struct{}), make(chan struct{})
 
-	init := AsStartCtx(func(ctx context.Context, out chan<- int) {
+	start := AsStartCtx(func(ctx context.Context, out chan<- int) {
 		<-ctx.Done()
 		close(endStart)
 	})
@@ -216,9 +216,9 @@ func TestContexts(t *testing.T) {
 		<-in
 		close(endTerm)
 	})
-	init.SendsTo(term)
+	start.SendsTo(term)
 	ctx, cancel := context.WithCancel(context.Background())
-	init.StartCtx(ctx)
+	start.StartCtx(ctx)
 
 	// check that, if the context is still open, no channels are closed
 	select {
@@ -238,7 +238,7 @@ func TestContexts(t *testing.T) {
 	select {
 	case <-endStart: //ok!
 	case <-time.After(timeout):
-		require.Fail(t, "timeout while waiting for the init node to finish")
+		require.Fail(t, "timeout while waiting for the start node to finish")
 	}
 	select {
 	case <-endTerm: //ok!

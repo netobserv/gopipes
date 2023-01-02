@@ -63,8 +63,8 @@ func Printer(in <-chan string) {
 
 func main() {
 	// Instantiating the different node types
-	start1 := node.AsInit(StartCounter)
-	start2 := node.AsInit(StartRandoms)
+	start1 := node.AsStart(StartCounter)
+	start2 := node.AsStart(StartRandoms)
 	odds := node.AsMiddle(OddFilter)
 	evens := node.AsMiddle(EvenFilter)
 	oddsMsg := node.AsMiddle(Messager("odd number"))
@@ -88,7 +88,7 @@ func main() {
 	oddsMsg.SendsTo(printer)
 	evensMsg.SendsTo(printer)
 
-	// All the init nodes must be started
+	// All the start nodes must be started
 	start1.Start()
 	start2.Start()
 
